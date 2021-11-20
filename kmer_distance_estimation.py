@@ -68,7 +68,7 @@ def maha_kmer(dict_1, dict_2):
         dev = pstdev((dict_2[coord], dict_1[coord]))
         if dev == 0:
             continue
-        print("C1:", dict_2[coord], "C2:", dict_1[coord], "Dev:", dev)
+        #print("C1:", dict_2[coord], "C2:", dict_1[coord], "Dev:", dev)
         maha_sum += ((dict_2[coord]/dev) - (dict_1[coord]/dev))**2
     return math.sqrt(maha_sum)
 
