@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import argparse, Bio.SeqIO, math, itertools, re
+import matplotlib.pyplot as plt
 from statistics import pstdev
 
 # parses command-line arguments with fasta files, kmer size, and an output file
@@ -75,16 +76,19 @@ def maha_kmer(dict_1, dict_2):
 # makes an output table comparing kmer distance for fasta samples
 def make_table(samples, k, maha, output):
     result_cache = {}
-
+    distances = []
+    # distances and sub_dist lists used to create heatmap
     ### SAMPLES = [Sample1, Sample2, ... SampleN]
     # generates unique combinations of all samples
     sample_combinations = list(itertools.combinations(samples, r=2))
     table = "{0}-mer comparison\t{1}".format(k, ("\t").join(samples))
     for sample1 in samples:
+        sub_dist = []
         table += "\n{0}\t".format(sample1)
         for sample2 in samples:
             if sample1 == sample2:
                 table += "0\t"
+                sub_dist.append(0)
                 continue
             
             # runs kmer distance pipleine to generate table data
@@ -93,6 +97,7 @@ def make_table(samples, k, maha, output):
                 kmer2 = parse_fasta(sample2, k)
                 compare_kmer(kmer1, kmer2)
                 dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
+                sub_dist.append(dist)
                 # caches result from two samples in a dictionary
                 result_cache[(sample1, sample2)] = dist
                 table += "{0}\t".format(dist)
@@ -100,12 +105,31 @@ def make_table(samples, k, maha, output):
             # cached result in the dictionary
             else:
                 table += "{0}\t".format(result_cache[(sample2, sample1)])
+                sub_dist.append(result_cache[(sample2, sample1)])
+        distances.append(sub_dist)
 
     if output is None:
         print(table)
     else:
         with open(output, "w") as out_data:
             out_data.write(table + "\n")
+    
+    print(distances)
+    # generates heatmap from the distances calculated above
+    fig, ax = plt.subplots()
+
+    ax.set_xticks(range(len(samples))); ax.set_yticks(range(len(samples)))
+    ax.set_xticklabels(samples); ax.set_yticklabels(samples)
+
+    ax.invert_yaxis()
+    ax.xaxis.tick_top()
+
+    # displays heatmap wit
+    heatmap = ax.imshow(distances, cmap="coolwarm")
+    fig.colorbar(heatmap)
+
+    plt.show()
+    fig.savefig(output, format="jpg")
             
 
             
