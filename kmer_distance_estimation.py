@@ -14,20 +14,6 @@ def parse_args():
     parser.add_argument("--out", "-o", help="kmer data table output")
     return parser.parse_args()
 
-'''
-# extracts organisms from fasta headers using regex terms
-def get_org(fasta):
-    organisms = []
-    for f in fasta:
-        with open(f, "r") as handle:
-            for line in handle:
-                if line.startswith(">"):
-                    regex = "[A-Z](\.?|[a-z]+) [a-z]+"
-                    organisms.append(re.search(regex, line))
-                    break
-    return organisms
-'''
-
 # generates kmer dictionary from fasta formatted data
 def parse_fasta(fasta, k):
     kmer_dict = {}
@@ -35,6 +21,8 @@ def parse_fasta(fasta, k):
     # parses fasta file using SeqRecord iterator
     for record in Bio.SeqIO.parse(fasta, "fasta"):
         seq = record.seq
+        regex = ">.* ([A-Z][a-z]+ [a-z]+)"
+        organism = re.search(regex, record.id).group(1)
 
         # Iterates over all combinations of k continuous nucleotides and adds the kmers to
         # a dictionary with a counter of the number of instances of the kmers
@@ -42,7 +30,8 @@ def parse_fasta(fasta, k):
             kmer = seq[nuc_idx:(nuc_idx + k)]
             kmer_dict.setdefault(kmer, 0)
             kmer_dict[kmer] += 1
-            
+
+    #return (organism, kmer_dict)    
     return kmer_dict
 
 # compares the keys in two dictionaries, and adds the missing keys
