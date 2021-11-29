@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-import argparse, Bio.SeqIO, math, itertools, re
+import argparse, Bio.SeqIO, math, re
 import matplotlib.pyplot as plt
 from statistics import pstdev
 
@@ -21,8 +21,8 @@ def parse_fasta(fasta, k):
     # parses fasta file using SeqRecord iterator
     for record in Bio.SeqIO.parse(fasta, "fasta"):
         seq = record.seq
-        regex = ">.* ([A-Z][a-z]+ [a-z]+)"
-        organism = re.search(regex, record.id).group(1)
+        regex = "[A-Z][a-z]+ [a-z]+"
+        organism = re.search(regex, record.description).group(0)
 
         # Iterates over all combinations of k continuous nucleotides and adds the kmers to
         # a dictionary with a counter of the number of instances of the kmers
@@ -30,9 +30,9 @@ def parse_fasta(fasta, k):
             kmer = seq[nuc_idx:(nuc_idx + k)]
             kmer_dict.setdefault(kmer, 0)
             kmer_dict[kmer] += 1
-
-    #return (organism, kmer_dict)    
-    return kmer_dict
+            
+    print(fasta + ":" + organism)
+    return (organism, kmer_dict)    
 
 # compares the keys in two dictionaries, and adds the missing keys
 # from each into one another
@@ -58,9 +58,122 @@ def maha_kmer(dict_1, dict_2):
         dev = pstdev((dict_2[coord], dict_1[coord]))
         if dev == 0:
             continue
-        #print("C1:", dict_2[coord], "C2:", dict_1[coord], "Dev:", dev)
         maha_sum += ((dict_2[coord]/dev) - (dict_1[coord]/dev))**2
     return math.sqrt(maha_sum)
+
+def make_table(samples, k, maha, output):
+    distance_dict = {}
+    #store_compare = {}
+    orgs = []
+    #distances = []
+
+    for sample in samples:
+        org, distance_dict[sample] = parse_fasta(sample, k)
+        if org not in orgs:
+                orgs.append(org)
+
+    store_compare = {}
+    distances = []
+    for sample1 in samples:
+        sub_dist = []
+        for sample2 in samples:
+            if (sample2, sample1) in store_compare:
+                sub_dist.append(store_compare[sample2, sample1])
+                continue
+            if sample1 == sample2:
+                sub_dist.append(0.0)
+                continue
+
+            kmer1 = distance_dict[sample1]
+            kmer2 = distance_dict[sample2]
+
+            compare_kmer(kmer1, kmer2)
+            dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
+            store_compare[(sample1, sample2)] = dist
+            sub_dist.append(dist)
+
+        distances.append(sub_dist)
+
+    print(distances)
+    fig, ax = plt.subplots()
+
+    ax.set_xticks(range(len(orgs))); ax.set_yticks(range(len(orgs)))
+    ax.set_xticklabels(orgs); ax.set_yticklabels(orgs)
+    ax.set_title("{0}-mer Distance Estimation".format(k))
+    #ax.minorticks_on
+    #ax.grid(True, which='minor', color='w', linestyle='-', linewidth=3)
+
+    for org1 in range(len(orgs)):
+        for org2 in range(len(orgs)):
+            data = ax.text(org1, org2, str(round(distances[org1][org2], 1)),
+                ha="center", va="center", color="w")
+
+    #ax.invert_yaxis()
+    ax.xaxis.tick_top()
+
+    # displays heatmap wit
+    heatmap = ax.imshow(distances, cmap="RdYlBu")
+    fig.colorbar(heatmap)
+
+    plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
+        va="center", rotation_mode="anchor", fontsize=6)
+    plt.setp(ax.get_xticklabels(), fontsize=6)
+    #plt.tight_layout()
+    #plt.show()
+    #fig.savefig(output, format="jpg")
+    plt.savefig(output + ".jpg", bbox_inches="tight")
+
+'''
+    for sample1 in samples:
+        sub_dist = []
+        for sample2 in samples:
+            if (sample2, sample1) in distance_dict:
+                sub_dist.append(distance_dict[sample2, sample1])
+                continue
+            if sample1 == sample2:
+                sub_dist.append(0)
+                continue
+            # 
+            org1, kmer1 = parse_fasta(sample1, k)
+            org2, kmer2 = parse_fasta(sample2, k)
+
+            if org1 not in orgs:
+                orgs.append(org1)
+            if org2 not in orgs:
+                orgs.append(org2)
+
+            compare_kmer(kmer1, kmer2)
+            dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
+            distance_dict[(sample1, sample2)] = dist
+            sub_dist.append(dist)
+
+        distances.append(sub_dist)
+
+    fig, ax = plt.subplots()
+
+    ax.set_xticks(range(len(orgs))); ax.set_yticks(range(len(orgs)))
+    ax.set_xticklabels(orgs); ax.set_yticklabels(orgs)
+    ax.set_title("{0}-mer Distance Estimation".format(args.k))
+
+
+    for org1 in range(len(orgs)):
+        for org2 in range(len(orgs)):
+            data = ax.text(org1, org2, str(distances[org1][org2]),
+                ha="center", va="center", color="w")
+
+    ax.invert_yaxis()
+    #ax.xaxis.tick_top()
+
+    # displays heatmap wit
+    heatmap = ax.imshow(distances, cmap="coolwarm")
+    fig.colorbar(heatmap)
+
+    plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
+        va="center", rotation_mode="anchor")
+    plt.tight_layout()
+    plt.show()
+    #fig.savefig(output, format="jpg")
+    plt.savefig(output + ".jpg", bbox_inches="tight")
 
 # makes an output table comparing kmer distance for fasta samples
 def make_table(samples, k, maha, output):
@@ -70,35 +183,37 @@ def make_table(samples, k, maha, output):
     ### SAMPLES = [Sample1, Sample2, ... SampleN]
     # generates unique combinations of all samples
     sample_combinations = list(itertools.combinations(samples, r=2))
-    table = "{0}-mer comparison\t{1}".format(k, ("\t").join(samples))
+    #table = "{0}-mer comparison\t{1}".format(k, ("\t").join(samples))
     for sample1 in samples:
         sub_dist = []
-        table += "\n{0}\t".format(sample1)
+        #table += "\n{0}\t".format(sample1)
         for sample2 in samples:
             if sample1 == sample2:
-                table += "0\t"
+                #table += "0\t"
                 sub_dist.append(0)
                 continue
             
             # runs kmer distance pipleine to generate table data
             if (sample1, sample2) in sample_combinations:
-                kmer1 = parse_fasta(sample1, k)
-                kmer2 = parse_fasta(sample2, k)
+                org1, kmer1 = parse_fasta(sample1, k)
+                org2, kmer2 = parse_fasta(sample2, k)
                 compare_kmer(kmer1, kmer2)
                 dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
                 sub_dist.append(dist)
                 # caches result from two samples in a dictionary
                 result_cache[(sample1, sample2)] = dist
-                table += "{0}\t".format(dist)
+                #table += "{0}\t".format(dist)
             # prevents duplicate running of sample comparison by accessing
             # cached result in the dictionary
             else:
-                table += "{0}\t".format(result_cache[(sample2, sample1)])
+                #table += "{0}\t".format(result_cache[(sample2, sample1)])
                 sub_dist.append(result_cache[(sample2, sample1)])
-        distances.append(sub_dist)
+        #organisms.append(org1)
+        distances.append((org1, sub_dist))
 
+    #print(organisms)
     if output is None:
-        print(table)
+        print(distances)
     else:
         with open(output, "w") as out_data:
             out_data.write(table + "\n")
@@ -107,8 +222,8 @@ def make_table(samples, k, maha, output):
     # generates heatmap from the distances calculated above
     fig, ax = plt.subplots()
 
-    ax.set_xticks(range(len(samples))); ax.set_yticks(range(len(samples)))
-    ax.set_xticklabels(samples); ax.set_yticklabels(samples)
+    ax.set_xticks(range(len(organisms))); ax.set_yticks(range(len(organisms)))
+    ax.set_xticklabels(organisms); ax.set_yticklabels(organisms)
 
     ax.invert_yaxis()
     ax.xaxis.tick_top()
@@ -119,20 +234,7 @@ def make_table(samples, k, maha, output):
 
     plt.show()
     fig.savefig(output, format="jpg")
-            
-
-            
-
-#test1 = {"A": 4, "B": 16}
-#test2 = {"A": 7, "B": 12, "C": 14}
-#compare_kmer(test1, test2)
-#print(euclid_kmer(test1, test2))
-
+'''          
 
 args = parse_args()
 make_table(args.fasta, args.k, args.m, args.out)
-
-#PA = parse_fasta(args.f[0], args.k)
-#KP = parse_fasta(args.f[1], args.k)
-#compare_kmer(PA, KP)
-#print(euclid_kmer(PA, KP))
