@@ -21,8 +21,12 @@ def parse_fasta(fasta, k):
     # parses fasta file using SeqRecord iterator
     for record in Bio.SeqIO.parse(fasta, "fasta"):
         seq = record.seq
-        regex = "[A-Z][a-z]+ [a-z]+"
-        organism = re.search(regex, record.description).group(0)
+        regex = "([A-Z])[a-z]+( [a-z]+)"
+        match = re.search(regex, record.description)
+        genus = match.group(1)
+        species = match.group(2)
+        organism = genus + "." + species
+        #organism = re.search(regex, record.description).group(0)
 
         # Iterates over all combinations of k continuous nucleotides and adds the kmers to
         # a dictionary with a counter of the number of instances of the kmers
@@ -63,9 +67,7 @@ def maha_kmer(dict_1, dict_2):
 
 def make_table(samples, k, maha, output):
     distance_dict = {}
-    #store_compare = {}
     orgs = []
-    #distances = []
 
     for sample in samples:
         org, distance_dict[sample] = parse_fasta(sample, k)
@@ -106,135 +108,25 @@ def make_table(samples, k, maha, output):
     for org1 in range(len(orgs)):
         for org2 in range(len(orgs)):
             data = ax.text(org1, org2, str(round(distances[org1][org2], 1)),
-                ha="center", va="center", color="w")
+                ha="center", va="center", color="w", fontsize=16)
 
     #ax.invert_yaxis()
     ax.xaxis.tick_top()
 
     # displays heatmap wit
-    heatmap = ax.imshow(distances, cmap="RdYlBu")
+    heatmap = ax.imshow(distances, cmap="coolwarm")
     fig.colorbar(heatmap)
 
-    plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
-        va="center", rotation_mode="anchor", fontsize=6)
-    plt.setp(ax.get_xticklabels(), fontsize=6)
+    #plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
+        #va="center", rotation_mode="anchor", fontsize=10)
+    plt.setp(ax.get_yticklabels(), fontsize=10)
+    plt.setp(ax.get_xticklabels(), fontsize=10)
     #plt.tight_layout()
     #plt.show()
     #fig.savefig(output, format="jpg")
+
+    fig.set_size_inches(10, 8)
     plt.savefig(output + ".jpg", bbox_inches="tight")
-
-'''
-    for sample1 in samples:
-        sub_dist = []
-        for sample2 in samples:
-            if (sample2, sample1) in distance_dict:
-                sub_dist.append(distance_dict[sample2, sample1])
-                continue
-            if sample1 == sample2:
-                sub_dist.append(0)
-                continue
-            # 
-            org1, kmer1 = parse_fasta(sample1, k)
-            org2, kmer2 = parse_fasta(sample2, k)
-
-            if org1 not in orgs:
-                orgs.append(org1)
-            if org2 not in orgs:
-                orgs.append(org2)
-
-            compare_kmer(kmer1, kmer2)
-            dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
-            distance_dict[(sample1, sample2)] = dist
-            sub_dist.append(dist)
-
-        distances.append(sub_dist)
-
-    fig, ax = plt.subplots()
-
-    ax.set_xticks(range(len(orgs))); ax.set_yticks(range(len(orgs)))
-    ax.set_xticklabels(orgs); ax.set_yticklabels(orgs)
-    ax.set_title("{0}-mer Distance Estimation".format(args.k))
-
-
-    for org1 in range(len(orgs)):
-        for org2 in range(len(orgs)):
-            data = ax.text(org1, org2, str(distances[org1][org2]),
-                ha="center", va="center", color="w")
-
-    ax.invert_yaxis()
-    #ax.xaxis.tick_top()
-
-    # displays heatmap wit
-    heatmap = ax.imshow(distances, cmap="coolwarm")
-    fig.colorbar(heatmap)
-
-    plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
-        va="center", rotation_mode="anchor")
-    plt.tight_layout()
-    plt.show()
-    #fig.savefig(output, format="jpg")
-    plt.savefig(output + ".jpg", bbox_inches="tight")
-
-# makes an output table comparing kmer distance for fasta samples
-def make_table(samples, k, maha, output):
-    result_cache = {}
-    distances = []
-    # distances and sub_dist lists used to create heatmap
-    ### SAMPLES = [Sample1, Sample2, ... SampleN]
-    # generates unique combinations of all samples
-    sample_combinations = list(itertools.combinations(samples, r=2))
-    #table = "{0}-mer comparison\t{1}".format(k, ("\t").join(samples))
-    for sample1 in samples:
-        sub_dist = []
-        #table += "\n{0}\t".format(sample1)
-        for sample2 in samples:
-            if sample1 == sample2:
-                #table += "0\t"
-                sub_dist.append(0)
-                continue
-            
-            # runs kmer distance pipleine to generate table data
-            if (sample1, sample2) in sample_combinations:
-                org1, kmer1 = parse_fasta(sample1, k)
-                org2, kmer2 = parse_fasta(sample2, k)
-                compare_kmer(kmer1, kmer2)
-                dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
-                sub_dist.append(dist)
-                # caches result from two samples in a dictionary
-                result_cache[(sample1, sample2)] = dist
-                #table += "{0}\t".format(dist)
-            # prevents duplicate running of sample comparison by accessing
-            # cached result in the dictionary
-            else:
-                #table += "{0}\t".format(result_cache[(sample2, sample1)])
-                sub_dist.append(result_cache[(sample2, sample1)])
-        #organisms.append(org1)
-        distances.append((org1, sub_dist))
-
-    #print(organisms)
-    if output is None:
-        print(distances)
-    else:
-        with open(output, "w") as out_data:
-            out_data.write(table + "\n")
-    
-    print(distances)
-    # generates heatmap from the distances calculated above
-    fig, ax = plt.subplots()
-
-    ax.set_xticks(range(len(organisms))); ax.set_yticks(range(len(organisms)))
-    ax.set_xticklabels(organisms); ax.set_yticklabels(organisms)
-
-    ax.invert_yaxis()
-    ax.xaxis.tick_top()
-
-    # displays heatmap wit
-    heatmap = ax.imshow(distances, cmap="coolwarm")
-    fig.colorbar(heatmap)
-
-    plt.show()
-    fig.savefig(output, format="jpg")
-'''          
 
 args = parse_args()
 make_table(args.fasta, args.k, args.m, args.out)
