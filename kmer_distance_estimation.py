@@ -11,6 +11,7 @@ def parse_args():
     parser.add_argument("-k", type=int, default=1, help="k-mer size")
     parser.add_argument("-m", action="store_true", 
         help="if specified, returns mahanalobis distance; defaults to euclidean distance")
+    parser.add_argument("-n", action="store_true", help="if specified, normalizes distance to percent")
     parser.add_argument("--out", "-o", help="kmer data table output")
     return parser.parse_args()
 
@@ -26,7 +27,6 @@ def parse_fasta(fasta, k):
         genus = match.group(1)
         species = match.group(2)
         organism = genus + "." + species
-        #organism = re.search(regex, record.description).group(0)
 
         # Iterates over all combinations of k continuous nucleotides and adds the kmers to
         # a dictionary with a counter of the number of instances of the kmers
@@ -59,44 +59,131 @@ def euclid_kmer(dict_1, dict_2):
 def maha_kmer(dict_1, dict_2):
     maha_sum = 0
     for coord in dict_2:
+        # calculates stdev from two kmer coordinates
         dev = pstdev((dict_2[coord], dict_1[coord]))
         if dev == 0:
             continue
         maha_sum += ((dict_2[coord]/dev) - (dict_1[coord]/dev))**2
     return math.sqrt(maha_sum)
 
-def make_table(samples, k, maha, output):
+# normalizes distances in the output matrix to 1
+def normalize(distances):
+    all_values = []
+    for sub in distances:
+        for val in sub:
+            all_values.append(val)
+
+    minimum = min(all_values)
+    maximum = max(all_values)
+
+    # sets values in sub_lists to normalized values
+    for sub in distances:
+        for idx, val in enumerate(sub):
+            norm_val = (val - minimum)/(maximum - minimum)
+            sub[idx] = norm_val
+
+    return distances
+
+def matrix_output(samples, k, maha):
+    ### {sample_N: {sample_N kmer dict}, ...} ###
     distance_dict = {}
     orgs = []
 
+    # pairs kmer dictionaries with organism names
     for sample in samples:
         org, distance_dict[sample] = parse_fasta(sample, k)
+        # adds organism to list for output header
         if org not in orgs:
                 orgs.append(org)
 
+    ### {(sample_x, sample_y): dist, ...} ###
+    # stores previously computed distance values so program only
+    # has to run unique pairs of orgs
     store_compare = {}
+
+    # distance matrix output; list of lists
     distances = []
     for sample1 in samples:
         sub_dist = []
         for sample2 in samples:
+            # if distance already computed, grab cached value
             if (sample2, sample1) in store_compare:
                 sub_dist.append(store_compare[sample2, sample1])
                 continue
+            # if samples are the same, dist = 0
             if sample1 == sample2:
                 sub_dist.append(0.0)
                 continue
 
+            # grabs kmer dictionaries from distance_dict
             kmer1 = distance_dict[sample1]
             kmer2 = distance_dict[sample2]
 
             compare_kmer(kmer1, kmer2)
+            # calculates distance using eithe mahalanobis distance or euclidean
+            # distance based on command-line input
             dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
+            # adds dist to cache dictionary
+            store_compare[(sample1, sample2)] = dist
+            sub_dist.append(dist)
+
+        distances.append(sub_dist)
+    return orgs, distances
+
+def make_table(samples, k, maha, norm, output):
+    ### {sample_N: {sample_N kmer dict}, ...} ###
+    distance_dict = {}
+    orgs = []
+
+    # pairs kmer dictionaries with organism names
+    for sample in samples:
+        org, distance_dict[sample] = parse_fasta(sample, k)
+        # adds organism to list for output header
+        if org not in orgs:
+                orgs.append(org)
+
+    ### {(sample_x, sample_y): dist, ...} ###
+    # stores previously computed distance values so program only
+    # has to run unique pairs of orgs
+    store_compare = {}
+
+    # distance matrix output; list of lists
+    distances = []
+    for sample1 in samples:
+        sub_dist = []
+        for sample2 in samples:
+            # if distance already computed, grab cached value
+            if (sample2, sample1) in store_compare:
+                sub_dist.append(store_compare[sample2, sample1])
+                continue
+            # if samples are the same, dist = 0
+            if sample1 == sample2:
+                sub_dist.append(0.0)
+                continue
+
+            # grabs kmer dictionaries from distance_dict
+            kmer1 = distance_dict[sample1]
+            kmer2 = distance_dict[sample2]
+
+            compare_kmer(kmer1, kmer2)
+            # calculates distance using eithe mahalanobis distance or euclidean
+            # distance based on command-line input
+            dist = maha_kmer(kmer1, kmer2) if maha else euclid_kmer(kmer1, kmer2)
+            # adds dist to cache dictionary
             store_compare[(sample1, sample2)] = dist
             sub_dist.append(dist)
 
         distances.append(sub_dist)
 
     print(distances)
+
+    # normalizes the data in distances if user specifies
+    if norm:
+        distances = normalize(distances)
+
+    print(distances)
+
+    # generates a heatmap based on orgaism similarity
     fig, ax = plt.subplots()
 
     ax.set_xticks(range(len(orgs))); ax.set_yticks(range(len(orgs)))
@@ -105,22 +192,26 @@ def make_table(samples, k, maha, output):
     #ax.minorticks_on
     #ax.grid(True, which='minor', color='w', linestyle='-', linewidth=3)
 
+    # adds value from distance matrix to correct square
     for org1 in range(len(orgs)):
         for org2 in range(len(orgs)):
-            data = ax.text(org1, org2, str(round(distances[org1][org2], 1)),
+            data = ax.text(org1, org2, str(round(distances[org1][org2], 2)),
                 ha="center", va="center", color="w", fontsize=16)
 
     #ax.invert_yaxis()
     ax.xaxis.tick_top()
 
-    # displays heatmap wit
+    # creates heatmap from axes and matrix
     heatmap = ax.imshow(distances, cmap="coolwarm")
     fig.colorbar(heatmap)
 
-    #plt.setp(ax.get_yticklabels(), rotation=90, ha="center", 
-        #va="center", rotation_mode="anchor", fontsize=10)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="left", 
+        va="top", rotation_mode="anchor", fontsize=10)
+
+    #for tick in ax.xaxis.get_majorticklabels():
+    #tick.set_horizontalalignment("left")
     plt.setp(ax.get_yticklabels(), fontsize=10)
-    plt.setp(ax.get_xticklabels(), fontsize=10)
+    #plt.setp(ax.get_xticklabels(), fontsize=10)
     #plt.tight_layout()
     #plt.show()
     #fig.savefig(output, format="jpg")
@@ -129,4 +220,4 @@ def make_table(samples, k, maha, output):
     plt.savefig(output + ".jpg", bbox_inches="tight")
 
 args = parse_args()
-make_table(args.fasta, args.k, args.m, args.out)
+make_table(args.fasta, args.k, args.m, args.n, args.out)
